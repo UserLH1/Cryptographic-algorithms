@@ -7,10 +7,7 @@ BINDIR = dist/bin
 
 # Fișiere sursă
 SRC = main.c \
-      src/aes_gcm.c \
-      src/serpent_cfb.c \
-      src/rsa.c \
-      src/utils.c
+      src/aes_gcm.c
 
 # Transformăm .c -> .o, dar punem .o în OBJDIR
 OBJ = $(SRC:%.c=$(OBJDIR)/%.o)
