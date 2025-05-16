@@ -2,12 +2,19 @@
 #include <string.h>
 #include "include/symmetric/core/aes.h"
 #include "include/symmetric/modes/gcm.h"
-// #include "include/symmetric/des_cfb.h"   // Commented out DES include
+#include "include/symmetric/core/des.h"
+#include "include/symmetric/modes/cfb.h"
 
-// Wrapper function to match the block_cipher_func interface
+// Wrapper function to match the block_cipher_func interface for AES
 static void aes_encrypt_block_wrapper(const void *ctx, const uint8_t in[16], uint8_t out[16])
 {
     aes_encrypt_block((const aes_context_t *)ctx, in, out);
+}
+
+// Wrapper function to match the block_cipher_func interface for DES
+static void des_encrypt_block_wrapper(const void *ctx, const uint8_t in[8], uint8_t out[8])
+{
+    des_encrypt_block((const des_context_t *)ctx, in, out);
 }
 
 int main(int argc, char *argv[])
@@ -26,7 +33,7 @@ int main(int argc, char *argv[])
     char *output_file = NULL;
     char *iv_file = NULL;
 
-    // Parsăm argumentele
+    // Parse arguments
     for (int i = 1; i < argc;)
     {
         if (strcmp(argv[i], "-a") == 0)
@@ -76,14 +83,14 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Verificăm argumentele obligatorii
+    // Verify required arguments
     if (!algorithm || !mode || !operation || !input_file || !key_file || !output_file || !iv_file)
     {
         fprintf(stderr, "Missing required arguments.\n");
         return 1;
     }
 
-    // Suport pentru AES-GCM
+    // Support for AES-GCM
     if (strcmp(algorithm, "aes") == 0 && strcmp(mode, "gcm") == 0)
     {
         const size_t KEY_SIZE = 32; // AES-256
@@ -180,12 +187,11 @@ int main(int argc, char *argv[])
         fclose(in_file);
         fclose(out_file);
     }
-    /*
-    // Suport pentru DES-CFB - commented out for initial AES testing
+    // Support for DES-CFB
     else if (strcmp(algorithm, "des") == 0 && strcmp(mode, "cfb") == 0)
     {
-        const size_t KEY_SIZE = 8; // DES key size
-        const size_t IV_SIZE = 8;  // DES block size for IV
+        const size_t KEY_SIZE = DES_KEY_SIZE;
+        const size_t IV_SIZE = DES_BLOCK_SIZE;
 
         uint8_t key[KEY_SIZE];
         uint8_t iv[IV_SIZE];
@@ -218,28 +224,63 @@ int main(int argc, char *argv[])
         }
         fclose(iv_fp);
 
+        // Initialize DES context
+        des_context_t des_ctx;
+        des_init(&des_ctx, key);
+
+        // Open files
+        FILE *in_file = fopen(input_file, "rb");
+        if (!in_file)
+        {
+            perror("Error opening input file");
+            return 1;
+        }
+
+        FILE *out_file = fopen(output_file, "wb");
+        if (!out_file)
+        {
+            perror("Error opening output file");
+            fclose(in_file);
+            return 1;
+        }
+
+        int result;
         if (strcmp(operation, "-e") == 0)
         {
-            int result = des_cfb_encrypt_file(input_file, output_file, key, iv);
+            // Use CFB encrypt with DES context
+            result = cfb_encrypt_file(&des_ctx, des_encrypt_block_wrapper,
+                                      DES_BLOCK_SIZE, in_file, out_file,
+                                      iv, IV_SIZE);
+
             if (result != 0)
             {
                 fprintf(stderr, "Encryption failed with code %d\n", result);
+                fclose(in_file);
+                fclose(out_file);
                 return 1;
             }
             printf("Encryption successful. Output written to %s\n", output_file);
         }
         else if (strcmp(operation, "-d") == 0)
         {
-            int result = des_cfb_decrypt_file(input_file, output_file, key, iv);
+            // Use CFB decrypt with DES context
+            result = cfb_decrypt_file(&des_ctx, des_encrypt_block_wrapper,
+                                      DES_BLOCK_SIZE, in_file, out_file,
+                                      iv, IV_SIZE);
+
             if (result != 0)
             {
                 fprintf(stderr, "Decryption failed with code %d\n", result);
+                fclose(in_file);
+                fclose(out_file);
                 return 1;
             }
             printf("Decryption successful. Output written to %s\n", output_file);
         }
+
+        fclose(in_file);
+        fclose(out_file);
     }
-    */
     else
     {
         fprintf(stderr, "Unsupported algorithm and mode combination: %s-%s\n", algorithm, mode);

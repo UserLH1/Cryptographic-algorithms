@@ -4,6 +4,8 @@
         "*.css": "tailwindcss",
         "*.log": "log",
         "string.h": "c",
-        "aes_gcm.h": "c"
+        "aes_gcm.h": "c",
+        "des.h": "c",
+        "rsa.h": "c"
     }
 }

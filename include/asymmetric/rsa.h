@@ -61,4 +61,28 @@ int rsa_public_encrypt_block_gmp(const uint8_t *plaintext, size_t plaintext_len,
  */
 int rsa_private_decrypt_block_gmp(const uint8_t *ciphertext, size_t ciphertext_len, uint8_t *plaintext, size_t *plaintext_len, const char *private_key_file, int bits);
 
+/**
+ * @brief Cripteaza un fisier folosind cheia publica RSA si padding PKCS#1 v1.5, utilizand GMP.
+ *
+ * @param input_file Calea catre fisierul de intrare care trebuie criptat.
+ * @param output_file Calea catre fisierul de iesire unde se salveaza textul cifrat.
+ * @param public_key_file Calea catre fisierul cu cheia publica (N si E).
+ * @param bits Lungimea cheii in biti.
+ * @return 0 in caz de succes, un cod de eroare negativ in caz de esec.
+ */
+int rsa_encrypt_file_gmp(const char *input_file, const char *output_file,
+                         const char *public_key_file, int bits);
+
+/**
+ * @brief Decripteaza un fisier folosind cheia privata RSA si padding PKCS#1 v1.5, utilizand GMP.
+ *
+ * @param input_file Calea catre fisierul de intrare care trebuie decriptat.
+ * @param output_file Calea catre fisierul de iesire unde se salveaza textul decriptat.
+ * @param private_key_file Calea catre fisierul cu cheia privata (N si D).
+ * @param bits Lungimea cheii in biti.
+ * @return 0 in caz de succes, un cod de eroare negativ in caz de esec.
+ */
+int rsa_decrypt_file_gmp(const char *input_file, const char *output_file,
+                         const char *private_key_file, int bits);
+
 #endif // RSA_GMP_H

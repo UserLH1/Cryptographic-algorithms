@@ -1,4 +1,4 @@
-#include "include/rsa.h"
+#include "asymmetric/rsa.h"
 #include <gmp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -345,8 +345,12 @@ int rsa_public_encrypt_block_gmp(const uint8_t *plaintext, size_t plaintext_len,
     // 4. Aplica Padding PKCS#1 v1.5 pe plaintext
     // Buffer pentru textul clar cu padding. Va avea exact dimensiunea modulului.
     size_t padded_len = modulus_bytes; // Dimensiunea buffer-ului cu padding
-    uint8_t padded_buffer[padded_len];
-
+    uint8_t *padded_buffer = malloc(padded_len);
+    if (!padded_buffer)
+    {
+        fprintf(stderr, "Memory allocation failed\n");
+        goto cleanup;
+    }
     // Format PKCS#1 v1.5 Encryption Padding: 00 || 02 || PS || 00 || Message
     // PS = Random Non-Zero Bytes, lungime PS = padded_len - 3 - plaintext_len
     size_t ps_len = padded_len - 3 - plaintext_len;
@@ -363,7 +367,7 @@ int rsa_public_encrypt_block_gmp(const uint8_t *plaintext, size_t plaintext_len,
     {
         do
         {
-            padded_buffer[2 + i] = mpz_urandomb_ui(e, rstate, 8); // Genereaza un byte random
+            padded_buffer[2 + i] = gmp_urandomm_ui(rstate, 256);
         } while (padded_buffer[2 + i] == 0x00); // PS nu trebuie sa contina zero-uri
     }
     gmp_randclear(rstate); // Elibereaza stare generator random
@@ -453,7 +457,7 @@ int rsa_private_decrypt_block_gmp(const uint8_t *ciphertext, size_t ciphertext_l
     priv_fp = NULL; // Evita dubla închidere
 
     // Verificam ca N are dimensiunea corecta
-    if (mpz_sizeinbase(n, 2) != bits)
+    if ((int)mpz_sizeinbase(n, 2) != bits)
     {
         fprintf(stderr, "Private key N has incorrect bit length (%zu vs %d). Check key file.\n", mpz_sizeinbase(n, 2), bits);
         goto cleanup;
@@ -477,7 +481,13 @@ int rsa_private_decrypt_block_gmp(const uint8_t *ciphertext, size_t ciphertext_l
     // 6. Convertește numarul mare 'm_prime' la buffer (care ar trebui sa contina textul cu padding)
     // Exporta numarul GMP 'm_prime' in buffer-ul 'padded_buffer' (MSB first)
     // Acest buffer ar trebui sa aiba dimensiunea modulus_bytes si sa contina textul cu padding PKCS#1 v1.5
-    uint8_t padded_buffer[modulus_bytes];
+    uint8_t *padded_buffer = malloc(modulus_bytes);
+    if (!padded_buffer)
+    {
+        fprintf(stderr, "Memory allocation failed\n");
+        ret = -1;
+        goto cleanup;
+    }
     size_t actual_padded_len = 0; // Va fi setata de mpz_export
 
     mpz_export(padded_buffer, &actual_padded_len, 1, 1, 0, 0, m_prime);
@@ -572,4 +582,168 @@ cleanup:
         fclose(priv_fp);
 
     return ret;
+}
+
+int rsa_encrypt_file_gmp(const char *input_file, const char *output_file,
+                         const char *public_key_file, int bits)
+{
+    FILE *in_fp = NULL, *out_fp = NULL;
+    uint8_t *plaintext_buffer = NULL;
+    uint8_t *ciphertext_buffer = NULL;
+    int result = -1;
+
+    // Calculate max size for single encryption
+    size_t max_pt_size = rsa_pkcs1_v15_max_plaintext_size(bits);
+    size_t ct_size = rsa_modulus_size_bytes(bits);
+
+    // Open files
+    in_fp = fopen(input_file, "rb");
+    if (!in_fp)
+    {
+        perror("Error opening input file");
+        goto cleanup;
+    }
+
+    out_fp = fopen(output_file, "wb");
+    if (!out_fp)
+    {
+        perror("Error opening output file");
+        goto cleanup;
+    }
+
+    // Allocate buffers
+    plaintext_buffer = malloc(max_pt_size);
+    ciphertext_buffer = malloc(ct_size);
+    if (!plaintext_buffer || !ciphertext_buffer)
+    {
+        perror("Memory allocation failed");
+        goto cleanup;
+    }
+
+    // Process input file in chunks
+    while (!feof(in_fp))
+    {
+        size_t bytes_read = fread(plaintext_buffer, 1, max_pt_size, in_fp);
+        if (bytes_read == 0)
+            break;
+
+        size_t output_len = ct_size;
+        if (rsa_public_encrypt_block_gmp(plaintext_buffer, bytes_read,
+                                         ciphertext_buffer, &output_len,
+                                         public_key_file, bits) != 0)
+        {
+            fprintf(stderr, "RSA encryption failed\n");
+            goto cleanup;
+        }
+
+        // Write size of the encrypted block first (for proper decryption)
+        if (fwrite(&bytes_read, sizeof(size_t), 1, out_fp) != 1)
+        {
+            perror("Error writing block size");
+            goto cleanup;
+        }
+
+        // Write the encrypted block
+        if (fwrite(ciphertext_buffer, 1, output_len, out_fp) != output_len)
+        {
+            perror("Error writing encrypted block");
+            goto cleanup;
+        }
+    }
+
+    result = 0; // Success
+
+cleanup:
+    if (in_fp)
+        fclose(in_fp);
+    if (out_fp)
+        fclose(out_fp);
+    free(plaintext_buffer);
+    free(ciphertext_buffer);
+    return result;
+}
+
+int rsa_decrypt_file_gmp(const char *input_file, const char *output_file,
+                         const char *private_key_file, int bits)
+{
+    FILE *in_fp = NULL, *out_fp = NULL;
+    uint8_t *plaintext_buffer = NULL;
+    uint8_t *ciphertext_buffer = NULL;
+    int result = -1;
+
+    size_t max_pt_size = rsa_pkcs1_v15_max_plaintext_size(bits);
+    size_t ct_size = rsa_modulus_size_bytes(bits);
+
+    // Open files
+    in_fp = fopen(input_file, "rb");
+    if (!in_fp)
+    {
+        perror("Error opening input file");
+        goto cleanup;
+    }
+
+    out_fp = fopen(output_file, "wb");
+    if (!out_fp)
+    {
+        perror("Error opening output file");
+        goto cleanup;
+    }
+
+    // Allocate buffers
+    plaintext_buffer = malloc(max_pt_size);
+    ciphertext_buffer = malloc(ct_size);
+    if (!plaintext_buffer || !ciphertext_buffer)
+    {
+        perror("Memory allocation failed");
+        goto cleanup;
+    }
+
+    // Process input file in chunks
+    while (!feof(in_fp))
+    {
+        // Read original plaintext size
+        size_t original_size;
+        if (fread(&original_size, sizeof(size_t), 1, in_fp) != 1)
+        {
+            if (feof(in_fp))
+                break; // Normal end of file
+            perror("Error reading block size");
+            goto cleanup;
+        }
+
+        // Read encrypted block
+        if (fread(ciphertext_buffer, 1, ct_size, in_fp) != ct_size)
+        {
+            perror("Error reading encrypted block");
+            goto cleanup;
+        }
+
+        // Decrypt block
+        size_t decrypted_len = max_pt_size;
+        if (rsa_private_decrypt_block_gmp(ciphertext_buffer, ct_size,
+                                          plaintext_buffer, &decrypted_len,
+                                          private_key_file, bits) != 0)
+        {
+            fprintf(stderr, "RSA decryption failed\n");
+            goto cleanup;
+        }
+
+        // Write decrypted data (only the original size)
+        if (fwrite(plaintext_buffer, 1, original_size, out_fp) != original_size)
+        {
+            perror("Error writing decrypted data");
+            goto cleanup;
+        }
+    }
+
+    result = 0; // Success
+
+cleanup:
+    if (in_fp)
+        fclose(in_fp);
+    if (out_fp)
+        fclose(out_fp);
+    free(plaintext_buffer);
+    free(ciphertext_buffer);
+    return result;
 }
