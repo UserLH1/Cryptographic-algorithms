@@ -1,32 +1,42 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -Iinclude
 
-# Directorul unde punem artefactele de build
+# Build directories
 OBJDIR = dist/obj
 BINDIR = dist/bin
 
-# Fișiere sursă
-SRC = main.c \
-      src/aes_gcm.c \
-      src/des_cfb.c \
-      src/utils.c \
-      src/rsa.c
+# Source files
+SRC = 	main_sym.c \
+		src/symmetric/core/aes.c \
+		src/symmetric/modes/gcm.c \
+		src/symmetric/modes/common.c
 
-# Transformăm .c -> .o, dar punem .o în OBJDIR
+# Object files
 OBJ = $(SRC:%.c=$(OBJDIR)/%.o)
 
-# Ținta principală
-all: $(BINDIR)/crypto
+# Main target - symmetric crypto tool
+all: $(BINDIR)/crypto_sym
 
-$(BINDIR)/crypto: $(OBJ)
-	mkdir -p $(BINDIR)
+$(BINDIR)/crypto_sym: $(OBJ)
+	@echo "Linking $@..."
+	@mkdir -p $(BINDIR)
 	$(CC) $(CFLAGS) -o $@ $(OBJ)
+	@echo "Build complete!"
 
-# Regula generică de compilare pentru fiecare .c
+# Generic compilation rule
 $(OBJDIR)/%.o: %.c
-	mkdir -p $(dir $@)  # creează subfoldere, dacă există
+	@echo "Compiling $<..."
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Curățare
+# Clean build artifacts
 clean:
-	rm -rf dist
+	@echo "Cleaning up..."
+	@rm -rf dist
+	@echo "Clean complete!"
+.PHONY: all clean
+debug:
+	@echo "Source files:"
+	@for file in $(SRC); do echo "  $$file"; done
+	@echo "Object files:"
+	@for file in $(OBJ); do echo "  $$file"; done
