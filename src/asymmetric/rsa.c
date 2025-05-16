@@ -6,10 +6,17 @@
 #include <time.h>   // Pentru seed la gmp_rand
 #include <limits.h> // Pentru ULONG_MAX
 
-// --- Helper Functions for BigInt (using GMP) ---
+// Cheia Publică: o pereche de numere mari (e,n), unde n=p×q și e este exponentul public.
+// Cheia Privată: o pereche de numere mari (d,n), unde d este exponentul privat.
+//  Generam doua numere p si q prime foarte mari, le inmultim
+//  Calculează funcția lui Euler phi pentru n: ϕ(n)=(p−1)×(q−1)
+//  Alege un număr întreg e (exponentul public) care să satisfacă două condiții:
+//  1 < e < ϕ(n) si  e și ϕ(n) sunt prime intre ele; de obicei e=65537 pt ca e prim
+//  Calculează d (exponentul privat) din relația d ≡ e^(-1) mod ϕ(n); d este secretul
+// ca sa criptam un mesaj cu cheia public il ridicam la puterea e modulo n
+//  ca sa decriptam mesajul cu cheia privata il ridicam la puterea d modulo n
 
-// Functie ajutatoare pentru a scrie un numar GMP intr-un fisier (format binar: lungime + bytes)
-// Returneaza 0 la succes, -1 la eroare
+//  Returneaza 0 la succes, -1 la eroare
 static int write_bigint_to_file(FILE *f, const mpz_t num)
 {
     size_t num_bytes;
